@@ -14,5 +14,13 @@
     "major": "COS",
     "year": 2028,
     "message": ""
+  },
+  {
+    "id": "conan",
+    "name": "Conan Chen",
+    "website": "https://conancchen.github.io",
+    "major": "ORFE",
+    "year": 2028,
+    "message": "i love ts (the storm)"
   }
 ]
