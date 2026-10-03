@@ -6,3 +6,4 @@ output/
 .next/
 out/
 .vercel/
+.env*
