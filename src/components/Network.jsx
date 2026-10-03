@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   advancePlayback,
+  cameraFor,
   createPlayback,
   frameFor,
   jumpPlayback,
@@ -17,13 +18,11 @@ import {
 import MemberSearch from "./MemberSearch.jsx";
 
 const EMPTY = [];
-const INK = "#171717";
 const FRAME_GAP = 44;
 const LEADER_GAP = 10;
 const NODE_CLEARANCE = 14;
 const EDGE_MARGIN = 12;
 const ORBIT_SPEED = 0.006;
-const ALPHA_LEVELS = 8;
 
 function selectionFromProps(people, selectedIndex, selectedId) {
   if (selectedId !== undefined && selectedId !== null) {
@@ -60,15 +59,15 @@ export default function Network({ people = EMPTY, selectedIndex, selectedId, onS
   const [paused, setPaused] = useState(false);
 
   const graphRef = useRef(null),
-    canvasRef = useRef(null),
     frameRef = useRef(null),
     hiddenFrameRef = useRef(null),
+    ringRef = useRef(null),
     linksRef = useRef(null),
     leaderRef = useRef(null),
     calloutRef = useRef(null),
     nameRef = useRef(null),
     nodeRefs = useRef([]);
-  const sizeRef = useRef({ width: 0, height: 0, ratio: 1 });
+  const sizeRef = useRef({ width: 0, height: 0 });
   const playbackRef = useRef(createPlayback());
   const activeRef = useRef(active),
     reducedRef = useRef(false),
@@ -127,59 +126,27 @@ export default function Network({ people = EMPTY, selectedIndex, selectedId, onS
     leader.setAttribute("d", `M${start.x},${start.y}L${tip.x},${tip.y}`);
   }
 
-  /** Lattice points and unit-distance edges, batched into a few alpha levels so a frame is a handful of canvas paths. */
-  function paintLattice(context, scene, positions, memberCount) {
-    const { alphas, edges, pointSize } = scene;
-    const shownEdges = Math.floor(scene.edgeFront * edges.length);
-    if (shownEdges > 0 && scene.edgeOpacity > 0.002) {
-      context.strokeStyle = INK;
-      context.lineWidth = 0.6;
-      for (let level = 1; level <= 4; level++) {
-        context.globalAlpha = scene.edgeOpacity * (level / 4);
-        context.beginPath();
-        for (let index = 0; index < shownEdges; index++) {
-          const [from, to] = edges[index];
-          if (Math.ceil(Math.min(alphas[from], alphas[to]) * 4) !== level) continue;
-          context.moveTo(positions[from].x, positions[from].y);
-          context.lineTo(positions[to].x, positions[to].y);
-        }
-        context.stroke();
-      }
-    }
-    context.fillStyle = INK;
-    const radius = pointSize / 2;
-    for (let level = 1; level <= ALPHA_LEVELS; level++) {
-      context.globalAlpha = level / ALPHA_LEVELS;
-      context.beginPath();
-      for (let index = memberCount; index < positions.length; index++) {
-        if (Math.ceil(alphas[index] * ALPHA_LEVELS) !== level) continue;
-        const { x, y } = positions[index];
-        context.moveTo(x + radius, y);
-        context.arc(x, y, radius, 0, Math.PI * 2);
-      }
-      context.fill();
-    }
-    context.globalAlpha = 1;
-  }
-
   drawRef.current = () => {
-    const graph = graphRef.current,
-      canvas = canvasRef.current;
-    const { width, height, ratio } = sizeRef.current;
-    if (!graph || !canvas || !width) return;
+    const graph = graphRef.current;
+    const { width, height } = sizeRef.current;
+    if (!graph || !width) return;
     const playback = playbackRef.current;
-    const scene = sceneFor(playback);
+    const memberCount = membersRef.current.length;
+    const scene = sceneFor(playback, memberCount);
     const viewport = viewportFor(width, height, scene, playback.zoom);
     const positions = scene.positions.map((point) => project(point, viewport));
     positionsRef.current = positions;
     alphasRef.current = scene.alphas;
-    const roster = membersRef.current;
-    const memberCount = Math.min(roster.length, positions.length);
 
-    const context = canvas.getContext("2d");
-    context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    context.clearRect(0, 0, width, height);
-    paintLattice(context, scene, positions, memberCount);
+    const ring = scene.strokes
+      .map(({ from, to, amount }) => {
+        const start = positions[from],
+          end = positions[to];
+        return `M${start.x},${start.y}L${start.x + (end.x - start.x) * amount},${start.y + (end.y - start.y) * amount}`;
+      })
+      .join("");
+    ringRef.current?.setAttribute("d", ring);
+    graph.style.setProperty("--ring-alpha", String(scene.edgeOpacity));
 
     const frame = frameFor(scene, viewport);
     const segment = ({ from, to }) => `M${from.x},${from.y}L${to.x},${to.y}`;
@@ -189,7 +156,7 @@ export default function Network({ people = EMPTY, selectedIndex, selectedId, onS
     graph.style.setProperty("--frame-alpha", String(scene.frameOpacity));
 
     const selection = selectedRef.current;
-    const nodeSize = Math.max(6, scene.pointSize + 3);
+    const nodeSize = Math.max(3.5, scene.pointSize + 1);
     graph.style.setProperty("--dot-size", `${nodeSize}px`);
     nodeRefs.current.forEach((node, index) => {
       const position = positions[index];
@@ -320,14 +287,10 @@ export default function Network({ people = EMPTY, selectedIndex, selectedId, onS
     };
     handleMotion();
     media.addEventListener?.("change", handleMotion);
-    const graph = graphRef.current,
-      canvas = canvasRef.current;
+    const graph = graphRef.current;
     const resize = () => {
       const { width, height } = graph.getBoundingClientRect();
-      const ratio = Math.min(2, window.devicePixelRatio || 1);
-      canvas.width = Math.round(width * ratio);
-      canvas.height = Math.round(height * ratio);
-      sizeRef.current = { width, height, ratio };
+      sizeRef.current = { width, height };
       drawRef.current();
     };
     const observer = new ResizeObserver(resize);
@@ -349,7 +312,7 @@ export default function Network({ people = EMPTY, selectedIndex, selectedId, onS
 
   function startOrbit(event) {
     if (event.button !== 0 || event.target !== event.currentTarget || reducedRef.current) return;
-    const camera = sceneFor(playbackRef.current).camera;
+    const camera = cameraFor(playbackRef.current);
     orbitRef.current = { x: event.clientX, y: event.clientY, camera, moved: false };
     event.currentTarget.setPointerCapture?.(event.pointerId);
   }
@@ -392,10 +355,10 @@ export default function Network({ people = EMPTY, selectedIndex, selectedId, onS
         onPointerUp={endOrbit}
         onPointerCancel={endOrbit}
       >
-        <canvas ref={canvasRef} className="lattice" aria-hidden="true" />
         <svg aria-hidden="true">
           <path ref={hiddenFrameRef} className="graph-frame hidden-edges" />
           <path ref={frameRef} className="graph-frame" />
+          <path ref={ringRef} className="ring" />
           <path ref={linksRef} className="ring-links" />
           <path ref={leaderRef} key={detail?.id ?? "none"} className="callout-leader" />
         </svg>

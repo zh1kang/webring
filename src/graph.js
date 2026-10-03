@@ -1,28 +1,29 @@
 /**
- * A port of Paradigm's Erdős sequence, drawn with webring nodes.
- * One stage value from 0 to 1 drives the whole scene: the origin, its twelve unit neighbours, the lift of a
- * 12-fold cyclotomic lattice into 3D inside a box, a side view of its layers, the cut-and-project top view, and
- * the unit-distance graph drawing out from the centre. Autoplay holds twice, then collapses and loops.
- * Members take the lattice points in order from the centre, so the first member is the origin.
+ * Paradigm's Erdős sequence, drawn only with the members of the ring.
+ * One stage value from 0 to 1 drives the whole scene: the first site alone, the other members growing out of it,
+ * the lift of the ring into 3D inside a box, a turn and a side view of its layers, the flat top view, and the ring
+ * links drawing from member to member. Autoplay holds twice, then collapses and loops.
  */
 
-const SYMMETRY = 12;
-const CONJUGATE = 5;
-const WINDOW = 2.8;
-const POINT_CAP = 1200;
+const RING_RADIUS = 1;
+const MAX_LIFT = 0.87 * RING_RADIUS;
+const GOLDEN = (Math.sqrt(5) - 1) / 2;
 
 export const BOUNDS = Object.freeze(Array.from({ length: 7 }, (_, index) => index / 6));
 const LIFT_START = 0.204;
 const CENTRE_START = (BOUNDS[4] + BOUNDS[5]) / 2;
 const NEIGHBOUR_PAUSE = 0.135;
+const EMERGE_START = 0.02;
+const EMERGE_END = 0.13;
+const DRAW_END = BOUNDS[5] + (BOUNDS[6] - BOUNDS[5]) * 0.7;
 
 export const STAGES = Object.freeze([
-  { label: "Origin", at: 0, jump: 0 },
-  { label: "Unit neighbours", at: 0.084, jump: BOUNDS[1] },
+  { label: "First site", at: 0, jump: 0 },
+  { label: "Members", at: 0.084, jump: BOUNDS[1] },
   { label: "Lift", at: LIFT_START, jump: 0.3 },
-  { label: "Cyclotomic lattice", at: BOUNDS[2], jump: 0.5 },
-  { label: "Cut-and-project", at: BOUNDS[4], jump: 0.75 },
-  { label: "Unit-distance graph", at: 0.85, jump: 1 },
+  { label: "Orbit", at: BOUNDS[2], jump: 0.5 },
+  { label: "Flatten", at: BOUNDS[4], jump: 0.75 },
+  { label: "Link", at: BOUNDS[5] + 0.01, jump: 1 },
 ]);
 
 const ZOOM = 0.58;
@@ -31,8 +32,9 @@ const ZOOM_CENTRE = 0.9;
 const ZOOM_OUTRO = 0.12;
 const POINT_SIZE = 3;
 const POINT_SIZE_START = 2;
-const REVEAL_SCALE = 0.93;
-const REVEAL_SWIRL = 0.065;
+const SPREAD_START = 0.25;
+const EMERGE_SPAN = 1.5;
+const EMERGE_SWIRL = 0.35;
 const DEG = Math.PI / 180;
 const POLAR = [45 * DEG, 55 * DEG, 55 * DEG, 90 * DEG];
 const AZIMUTH = [0, 45 * DEG, 90 * DEG, 90 * DEG];
@@ -62,83 +64,28 @@ const approach = (value, target, tau, seconds) => (tau <= 1e-5 ? target : value 
 const ramp = (value, from, to, ease = smooth) => (to <= from ? (value >= to ? 1 : 0) : ease((value - from) / (to - from)));
 const angleBetween = (from, to) => Math.atan2(Math.sin(from - to), Math.cos(from - to));
 
-function unitEdges(points) {
-  const cells = new Map();
-  const key = (x, y) => `${x},${y}`;
-  points.forEach((point, index) => {
-    const cell = key(Math.floor(point.x), Math.floor(point.y));
-    (cells.get(cell) ?? cells.set(cell, []).get(cell)).push(index);
-  });
-  const edges = [];
-  points.forEach((point, index) => {
-    const cx = Math.floor(point.x),
-      cy = Math.floor(point.y);
-    for (let dx = -1; dx <= 1; dx++)
-      for (let dy = -1; dy <= 1; dy++)
-        for (const other of cells.get(key(cx + dx, cy + dy)) ?? []) {
-          if (other <= index) continue;
-          const distance = Math.hypot(points[other].x - point.x, points[other].y - point.y);
-          if (Math.abs(distance - 1) < 1e-6) edges.push([index, other]);
-        }
-  });
-  const middle = ([from, to]) => Math.hypot(points[from].x + points[to].x, points[from].y + points[to].y);
-  return edges.sort((a, b) => middle(a) - middle(b));
-}
-
-let lattice = null;
+const layouts = new Map();
 /**
- * The cut-and-project lattice: integer points of Z^4 whose internal-space image lies in a disk.
- * Each point keeps its physical position in the plane and lifts by its internal coordinate.
- * Order: the origin, the twelve unit neighbours by angle, then every other point by radius.
+ * Members sit on a ring in ring order, clockwise from the top of the final view; a single member sits at the centre.
+ * The final camera turns 90 degrees, so the top of that view is the -x axis.
+ * Each member lifts to its own layer, spaced by the golden ratio so ring neighbours sit at different heights.
+ * The links join each member to the next and close the ring.
  */
-export function buildLattice() {
-  if (lattice) return lattice;
-  const step = (2 * Math.PI) / SYMMETRY;
-  const basis = Array.from({ length: 4 }, (_, index) => ({
-    x: Math.cos(step * index),
-    y: Math.sin(step * index),
-    u: Math.cos(step * CONJUGATE * index),
-    v: Math.sin(step * CONJUGATE * index),
-  }));
-  const reach = Math.max(7, Math.min(13, Math.round(WINDOW * 1.7) + 3));
-  const candidates = [];
-  const coordinate = [0, 0, 0, 0];
-  const visit = (axis) => {
-    if (axis === 4) {
-      let x = 0,
-        y = 0,
-        u = 0,
-        v = 0;
-      for (let index = 0; index < 4; index++) {
-        x += coordinate[index] * basis[index].x;
-        y += coordinate[index] * basis[index].y;
-        u += coordinate[index] * basis[index].u;
-        v += coordinate[index] * basis[index].v;
-      }
-      if (u * u + v * v <= WINDOW * WINDOW + 1e-9) candidates.push({ x, y, lift: u, r2: x * x + y * y });
-      return;
-    }
-    for (let value = -reach; value <= reach; value++) {
-      coordinate[axis] = value;
-      visit(axis + 1);
-    }
-  };
-  visit(0);
-  candidates.sort((a, b) => a.r2 - b.r2);
-  const kept = candidates.slice(0, POINT_CAP);
-  const origin = kept.findIndex((point) => point.r2 < 1e-9);
-  const neighbours = kept
-    .filter((point, index) => index !== origin && Math.abs(Math.sqrt(point.r2) - 1) < 1e-5)
-    .sort((a, b) => Math.atan2(a.y, a.x) - Math.atan2(b.y, b.x));
-  const rest = kept.filter((point, index) => index !== origin && Math.abs(Math.sqrt(point.r2) - 1) >= 1e-5);
-  const ordered = [kept[origin], ...neighbours, ...rest];
-  const mean = ordered.reduce((sum, point) => sum + point.lift, 0) / ordered.length;
-  const radius = Math.max(...ordered.map((point) => Math.sqrt(point.r2)));
-  const spread = Math.max(...ordered.map((point) => Math.abs(point.lift - mean)));
-  const maxLift = 0.87 * radius;
-  const points = ordered.map((point) => ({ x: point.x, y: point.y, lift: ((point.lift - mean) * maxLift) / spread }));
-  lattice = Object.freeze({ points, edges: unitEdges(points), radius, maxLift, neighbours: neighbours.length });
-  return lattice;
+export function ringLayout(count) {
+  const cached = layouts.get(count);
+  if (cached) return cached;
+  const raw = Array.from({ length: count }, (_, index) => (index * GOLDEN) % 1);
+  const mean = raw.reduce((sum, value) => sum + value, 0) / Math.max(1, count);
+  const spread = Math.max(0, ...raw.map((value) => Math.abs(value - mean)));
+  const slots = raw.map((value, index) => {
+    const angle = Math.PI - (2 * Math.PI * index) / count;
+    const lift = spread > 0 ? ((value - mean) * MAX_LIFT) / spread : 0;
+    return count === 1 ? { x: 0, y: 0, lift } : { x: Math.cos(angle) * RING_RADIUS, y: Math.sin(angle) * RING_RADIUS, lift };
+  });
+  const edges = count < 2 ? [] : count === 2 ? [[0, 1]] : slots.map((_, index) => [index, (index + 1) % count]);
+  const layout = Object.freeze({ slots, edges, radius: RING_RADIUS, maxLift: MAX_LIFT });
+  layouts.set(count, layout);
+  return layout;
 }
 
 /** Camera and layer values for one stage, following Paradigm's choreography. */
@@ -173,8 +120,8 @@ export function stageView(stage) {
     polar,
     azimuth,
     frameOpacity,
-    edgeOpacity: ramp(stage, BOUNDS[5], lerp(BOUNDS[5], BOUNDS[6], 0.35), expo),
-    edgeFront: ramp(stage, BOUNDS[5], BOUNDS[6], expo),
+    edgeOpacity: ramp(stage, BOUNDS[5], BOUNDS[5] + 0.01),
+    edgeFront: ramp(stage, BOUNDS[5], DRAW_END),
   };
 }
 
@@ -322,73 +269,46 @@ export function cameraFor(state) {
   return state.orbit ? { polar: state.orbit.polar, azimuth: state.orbit.azimuth } : { polar: view.polar, azimuth: view.azimuth };
 }
 
-/** Points beyond `radius` fade over `soft`; Paradigm narrows this to the centre, then opens it to the whole graph. */
-function centreFade(state, radius) {
-  const { stage } = state;
-  if (state.outro || stage < CENTRE_START) return { radius: radius * 2, soft: 1, mix: 0 };
-  let core, scale;
-  if (stage < BOUNDS[5]) {
-    const amount = smooth((stage - CENTRE_START) / (BOUNDS[5] - CENTRE_START));
-    core = lerp(radius, radius * 0.2, amount);
-    scale = lerp(ZOOM, 1.8, amount) / lerp(ZOOM, ZOOM_CENTRE, amount);
-  } else {
-    const amount = expo((stage - BOUNDS[5]) / (BOUNDS[6] - BOUNDS[5]));
-    core = lerp(radius * 0.2, radius * 2, amount);
-    scale = lerp(1.8, ZOOM, amount) / lerp(ZOOM_CENTRE, ZOOM, amount);
-  }
-  return { radius: core * scale, soft: scale, mix: 1 };
-}
-
 /**
- * Everything needed to draw one frame: world positions, per-point alpha, the point size in pixels,
- * the box extent, and the edge opacity and front.
+ * Everything needed to draw one frame for `count` members: world positions, per-member alpha, the point size in
+ * pixels, the box extent, and the ring strokes drawn so far.
+ * The first member starts alone at the centre; the others grow out of it in ring order and the ring opens to full size.
  */
-export function sceneFor(state) {
-  const { points, edges, radius, maxLift, neighbours } = buildLattice();
+export function sceneFor(state, count) {
+  const { slots, edges, radius, maxLift } = ringLayout(count);
   const view = stageView(state.stage);
-  const count = points.length;
-  const ring = 1 + neighbours;
-  const reveal =
-    state.stage < BOUNDS[1]
-      ? lerp(1, ring, expo((state.stage - 0.02) / 0.11))
-      : lerp(ring, count, quint((state.stage - BOUNDS[1]) / (BOUNDS[2] - BOUNDS[1])));
-  const front = 1 / Math.max(1, Math.min(20, reveal * 0.08));
-  const ringStep = ring > 2 ? 1 / (ring - 1) : front;
-  const lift = Math.max(0, view.lift) * maxLift;
-  const fade = centreFade(state, radius);
+  const emerge = expo((state.stage - EMERGE_START) / (EMERGE_END - EMERGE_START));
+  const spread = lerp(SPREAD_START, 1, quint((state.stage - BOUNDS[1]) / (BOUNDS[2] - BOUNDS[1])));
+  const progress = emerge * Math.max(0, count - 2 + EMERGE_SPAN);
+  const lift = Math.max(0, view.lift);
   const positions = new Array(count);
   const alphas = new Float32Array(count);
   for (let index = 0; index < count; index++) {
-    const point = points[index];
-    const shown = clamp(index >= 1 && index < ring ? (reveal - 1) * ringStep : (reveal - index) * front);
-    let { x, y } = point;
-    if (index > 0 && shown < 1) {
-      const scale = REVEAL_SCALE + (1 - REVEAL_SCALE) * shown;
-      const distance = Math.hypot(x, y);
-      const swirl = (REVEAL_SWIRL / (distance > 1 ? distance : 1)) * (1 - shown);
-      const cos = Math.cos(swirl),
-        sin = Math.sin(swirl);
-      [x, y] = [(x * cos - y * sin) * scale, (x * sin + y * cos) * scale];
-    }
-    positions[index] = { x, y, z: point.lift * Math.max(0, view.lift) };
-    const distance = Math.hypot(point.x, point.y);
-    const centre = 1 - fade.mix * smooth((distance - fade.radius) / fade.soft);
-    alphas[index] = shown * state.fade * centre;
+    const slot = slots[index];
+    const shown = index === 0 ? 1 : clamp((progress - (index - 1)) / EMERGE_SPAN);
+    const travel = (index === 0 ? emerge : shown) * spread;
+    const swirl = EMERGE_SWIRL * (1 - (index === 0 ? emerge : shown));
+    const cos = Math.cos(swirl),
+      sin = Math.sin(swirl);
+    positions[index] = { x: (slot.x * cos - slot.y * sin) * travel, y: (slot.x * sin + slot.y * cos) * travel, z: slot.lift * lift };
+    alphas[index] = shown * state.fade;
   }
+  const front = (state.outro ? state.collapse * state.collapse : view.edgeFront) * edges.length;
+  const strokes = edges.slice(0, Math.ceil(front - 1e-9)).map(([from, to], index) => ({ from, to, amount: clamp(front - index) }));
   const growth = smooth((state.stage - 0.245) / (BOUNDS[2] - 0.245));
   let size = lerp(POINT_SIZE_START, POINT_SIZE, growth);
   if (state.outro) size = lerp(POINT_SIZE_START, size, state.collapse);
+  const camera = cameraFor(state);
   return {
     positions,
     alphas,
-    edges,
+    strokes,
     pointSize: size * (state.zoom / ZOOM),
-    edgeOpacity: view.edgeOpacity * 0.3 * state.fade,
-    edgeFront: state.outro ? state.collapse * state.collapse : view.edgeFront,
+    edgeOpacity: view.edgeOpacity * state.fade,
     frameOpacity: view.frameOpacity * state.fade,
-    extent: { radius: radius * 1.06, height: lift * 1.06 },
-    camera: cameraFor(state),
-    reach: radius + lift * Math.abs(Math.sin(cameraFor(state).polar)),
+    extent: { radius: radius * 1.12, height: maxLift * lift * 1.12 },
+    camera,
+    reach: radius * 1.12 + maxLift * lift * Math.abs(Math.sin(camera.polar)),
   };
 }
 
@@ -403,7 +323,7 @@ export function stageIndex(stage) {
 
 /**
  * An orthographic camera on the sphere around the origin; polar 0 looks straight down on the plane.
- * The frustum fits the lattice reach to the graph, scaled by the playback zoom, as in Paradigm.
+ * The frustum fits the ring reach to the graph, scaled by the playback zoom, as in Paradigm.
  */
 export function viewportFor(width, height, scene, zoom) {
   const { polar, azimuth } = scene.camera;
@@ -439,7 +359,7 @@ const BOX_EDGES = CORNERS.flatMap((corner, from) =>
   ),
 );
 
-/** The box around the lattice. Edges at the corner farthest from the camera are hidden, so they are drawn dashed. */
+/** The box around the ring. Edges at the corner farthest from the camera are hidden, so they are drawn dashed. */
 export function frameFor(scene, viewport) {
   const { radius, height } = scene.extent;
   const corners = CORNERS.map((corner) => project({ x: corner.x * radius, y: corner.y * radius, z: corner.z * height }, viewport));

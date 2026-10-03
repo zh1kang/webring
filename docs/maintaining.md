@@ -81,11 +81,10 @@ Unknown members produce an inline message and never redirect.
 
 ## Interaction
 
-The graph is a port of the Paradigm Erdős sequence, drawn with webring nodes.
-One stage value drives the origin, the twelve unit neighbours, the lift of a 12-fold cyclotomic lattice into a box, a side view of its layers, the cut-and-project top view, and the unit-distance graph.
-Autoplay holds on the neighbours and on the centre, then collapses and loops.
-Members take lattice points from the centre outward, so the first member is the origin.
-The lattice and its edges draw on a canvas; members are buttons on top of it.
+The graph follows the camera choreography of the Paradigm Erdős sequence, but it draws only the members of the ring.
+One stage value drives six stages: the first site alone, the other members growing out of it, the lift of the ring into a box, an orbit and a side view of its layers, the flat top view, and the ring links drawing from member to member.
+Autoplay holds on the members and on the top view, then collapses and loops.
+Members sit on a ring in ring order, clockwise from the top, and each member lifts to its own layer.
 Select a stage label to jump to that stage and pause; select anywhere else to resume.
 Drag the background to orbit the camera; it eases back after release.
 Select a node to show its label beside the graph, with links to visit the site or move to the previous or next member.
@@ -97,6 +96,5 @@ Reduced motion skips the crest drawing and shows a still graph.
 
 ## Reference details
 
-See [design references](design-references.md) for inspected behavior, source notes, and verification limits.
 The FIRESTONERS SVG is generated from Averia Serif Libre Bold by `scripts/outline-wordmark.py`.
 Fonts are served locally through `next/font/local`, and their licenses are included beside the font files.
