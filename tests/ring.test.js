@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {REQUEST_FIELDS, joinRequestUrl, validateMembers, resolveNavigation, slugify, widget} from '../src/ring.js';
-import {parseRequest} from '../scripts/join-request.mjs';
+import {admitMember, linksToRing, parseRequest} from '../scripts/join-request.mjs';
 const members = validateMembers(['a', 'b', 'c'].map((id, index) => ({id, name: id, website: `https://${id}.site`, major: 'Computer Science', year: 2026 + index, message: index ? '' : 'Builds tiny synths.'})));
 /** The body GitHub writes for a submitted issue form. */
 const formBody = member => REQUEST_FIELDS.map(({key, label}) => `### ${label}\n\n${member[key] === '' ? '_No response_' : member[key]}`).join('\n\n') + '\n\n### Widget\n\n- [X] I have added the ring widget to my website.';
@@ -55,38 +55,98 @@ test('the join link prefills the issue form, whose fields match the parser', asy
   for (const {id, label} of REQUEST_FIELDS) assert.match(form, new RegExp(`id: ${id}\\n\\s+attributes:\\n\\s+label: ${label}\\n`), id);
 });
 
-test('approved issue automation creates one PR and resumes a partial branch', async () => {
-  const {createMemberPullRequest} = await import('../scripts/join-request.mjs');
-  for (const branchExists of [false, true]) {
-    const calls = [];
-    const github = {rest: {
-      issues: {get: async () => ({data: {state: 'open', labels: [{name: 'approved'}, {name: 'join-request'}], body: formBody(members[0])}})},
-      repos: {get: async () => ({data: {default_branch: 'main'}}), getContent: async ({ref}) => {assert.equal(ref, 'base'); return {data: {content: Buffer.from('[]').toString('base64')}};}},
-      pulls: {list: async () => ({data: []}), create: async args => {calls.push(['pr', args]);}},
-      git: {
-        getRef: async ({ref}) => {if (ref !== 'heads/main' && !branchExists) throw Object.assign(new Error('Missing'), {status: 404}); return {data: {object: {sha: 'base'}}};},
-        getCommit: async () => ({data: {tree: {sha: 'tree'}}}),
-        createBlob: async args => {calls.push(['blob', args]); return {data: {sha: 'blob'}};},
-        createTree: async () => ({data: {sha: 'new-tree'}}),
-        createCommit: async () => ({data: {sha: 'commit'}}),
-        createRef: async args => {calls.push(['ref', args]);}
+test('the badge check finds links to the ring, and only to the ring', () => {
+  assert.ok(linksToRing(widget('https://firestoners.com/', 'https://a.site')));
+  assert.ok(linksToRing('<a href="https://www.firestoners.com/#a?nav=next">→</a>'));
+  assert.ok(linksToRing("<script src='//firestoners.com/widget.js'></script>"));
+  for (const html of ['<a href="https://notfirestoners.com/">', '<a href="https://firestoners.com.evil.site/">', 'firestoners.com in plain text', ''])
+    assert.equal(linksToRing(html), false, html);
+});
+
+/** A fake GitHub API over one issue and a `main` branch that holds `data/members.json`. */
+function fakeRepository({body, labels = ['join-request'], members: start = [], races = 0}) {
+  const state = {issue: {state: 'open', labels: labels.map(name => ({name})), body}, head: 'c0', files: {c0: JSON.stringify(start)}, comments: [], races};
+  const blobs = {}, trees = {}, commits = {};
+  const github = {rest: {
+    issues: {
+      get: async () => ({data: state.issue}),
+      listComments: async () => ({data: state.comments}),
+      createComment: async ({body}) => {state.comments.push({body});},
+      update: async ({state: next, state_reason}) => {Object.assign(state.issue, {state: next, state_reason});}
+    },
+    repos: {get: async () => ({data: {default_branch: 'main'}}), getContent: async ({ref}) => ({data: {content: Buffer.from(state.files[ref]).toString('base64')}})},
+    git: {
+      getRef: async ({ref}) => {assert.equal(ref, 'heads/main'); return {data: {object: {sha: state.head}}};},
+      getCommit: async ({commit_sha}) => ({data: {tree: {sha: `tree-${commit_sha}`}}}),
+      createBlob: async ({content}) => {const sha = `blob${Object.keys(blobs).length}`; blobs[sha] = content; return {data: {sha}};},
+      createTree: async ({tree}) => {const sha = `tree${Object.keys(trees).length}`; trees[sha] = blobs[tree[0].sha]; return {data: {sha}};},
+      createCommit: async ({tree, parents, message}) => {const sha = `c${Object.keys(commits).length + 1}`; commits[sha] = {parents, message}; state.files[sha] = trees[tree]; return {data: {sha}};},
+      updateRef: async ({sha, force}) => {
+        assert.equal(force, false);
+        if (state.races > 0) {
+          state.races--;
+          state.head = `other${state.races}`;
+          state.files[state.head] = JSON.stringify([...JSON.parse(state.files.c0), {...members[2], id: `z${state.races}`, website: `https://z${state.races}.site`}]);
+          throw Object.assign(new Error('Update is not a fast forward'), {status: 422});
+        }
+        assert.deepEqual(commits[sha].parents, [state.head]);
+        state.head = sha;
       }
-    }};
-    const context = {repo: {owner: 'owner', repo: 'ring'}, payload: {issue: {number: 1}}};
-    await createMemberPullRequest({github, context});
-    assert.equal(calls.filter(([kind]) => kind === 'pr').length, 1);
-    assert.equal(calls.filter(([kind]) => kind === 'ref').length, branchExists ? 0 : 1);
-    github.rest.pulls.list = async () => ({data: [{state: 'open'}]});
-    await createMemberPullRequest({github, context});
-    assert.equal(calls.filter(([kind]) => kind === 'pr').length, 1);
-    github.rest.pulls.list = async () => ({data: [{state: 'closed', number: 7, merged_at: null}]});
-    github.rest.pulls.update = async args => {assert.equal(args.state, 'open'); calls.push(['reopen']);};
-    await createMemberPullRequest({github, context});
-    assert.equal(calls.filter(([kind]) => kind === 'reopen').length, 1);
-    github.rest.issues.get = async () => ({data: {state: 'open', labels: [{name: 'approved'}], body: formBody(members[1])}});
-    await createMemberPullRequest({github, context});
-    assert.equal(calls.filter(([kind]) => kind === 'pr').length, 1);
+    }
+  }};
+  const context = {repo: {owner: 'owner', repo: 'ring'}, payload: {issue: {number: 9}}};
+  const ring = () => JSON.parse(state.files[state.head]);
+  return {state, github, context, ring, commits};
+}
+const withBadge = async website => `<footer>${widget('https://firestoners.com/', website)}</footer>`;
+
+test('a valid request whose site links to the ring is added to main and closed', async () => {
+  const repository = fakeRepository({body: formBody(members[0]), members: [members[1]]});
+  assert.equal(await admitMember({...repository, load: withBadge}), 'added');
+  assert.deepEqual(repository.ring(), [members[1], members[0]]);
+  assert.match(Object.values(repository.commits)[0].message, /^feat: add a to the ring\n\nCloses #9$/);
+  assert.equal(repository.state.issue.state, 'closed');
+  assert.match(repository.state.comments.at(-1).body, /Welcome to the ring, a!/);
+  assert.equal(await admitMember({...repository, load: withBadge}), 'skipped', 'a closed issue is left alone');
+});
+
+test('a site without the badge gets one comment and is added once the badge is live', async () => {
+  const repository = fakeRepository({body: formBody(members[0])});
+  const bare = async () => '<footer>hello</footer>';
+  assert.equal(await admitMember({...repository, load: bare}), 'no-badge');
+  assert.equal(await admitMember({...repository, load: bare}), 'no-badge');
+  assert.equal(repository.state.comments.length, 1, 'the same reply is not posted twice');
+  assert.deepEqual(repository.ring(), []);
+  assert.equal(await admitMember({...repository, load: withBadge}), 'added');
+  assert.deepEqual(repository.ring(), [members[0]]);
+});
+
+test('requests that cannot be added explain why and change nothing', async () => {
+  const unreachable = fakeRepository({body: formBody(members[0])});
+  assert.equal(await admitMember({...unreachable, load: async () => {throw new Error('The website answered with HTTP 503.');}}), 'unreachable');
+  assert.match(unreachable.state.comments[0].body, /HTTP 503/);
+  const invalid = fakeRepository({body: formBody({...members[0], website: 'http://a.site'})});
+  assert.equal(await admitMember({...invalid, load: withBadge}), 'invalid');
+  const taken = fakeRepository({body: formBody({...members[0], website: 'https://other.site'}), members: [members[0]]});
+  assert.equal(await admitMember({...taken, load: withBadge}), 'invalid');
+  assert.match(taken.state.comments[0].body, /Duplicate member id or website/);
+  for (const repository of [unreachable, invalid, taken]) {
+    assert.equal(repository.state.issue.state, 'open');
+    assert.deepEqual(Object.keys(repository.commits), []);
   }
+  const unlabelled = fakeRepository({body: formBody(members[0]), labels: []});
+  assert.equal(await admitMember({...unlabelled, load: withBadge}), 'skipped');
+  assert.deepEqual(unlabelled.state.comments, []);
+});
+
+test('reruns are safe: a member already in the ring only closes the issue, and a lost push race retries', async () => {
+  const present = fakeRepository({body: formBody(members[0]), members: [members[0]]});
+  assert.equal(await admitMember({...present, load: withBadge}), 'present');
+  assert.deepEqual(present.ring(), [members[0]]);
+  assert.equal(present.state.issue.state, 'closed');
+  const raced = fakeRepository({body: formBody(members[0]), races: 2});
+  assert.equal(await admitMember({...raced, load: withBadge}), 'added');
+  assert.deepEqual(raced.ring().map(member => member.id), ['z0', 'a'], 'the member is appended to the latest ring');
 });
 
 test('Firestone widget includes hosted icon and scoped keyboard helper', () => {

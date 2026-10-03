@@ -5,7 +5,7 @@ labels: [join-request]
 body:
   - type: markdown
     attributes:
-      value: Add the ring widget to your website first. A maintainer reviews your site, then adds the `approved` label, which opens the pull request.
+      value: Add the ring widget to your website first. When you submit, a bot checks that your site links to firestoners.com, adds you to the ring, and closes this issue.
   - type: input
     id: name
     attributes:

@@ -24,32 +24,29 @@ Every push to `main` deploys production at `https://firestoners.com`; other bran
 Vercel runs `npm run build` and serves the static export in `out`.
 The **Check ring** workflow runs the tests, data validation, and build on every pull request and push to `main`.
 
-One-time GitHub setup for member requests:
-
-1. In Settings > Actions > General > Workflow permissions, enable **Allow GitHub Actions to create and approve pull requests**.
-   The workflow creates pull requests; it does not approve them.
-2. Create the issue labels `join-request` and `approved`.
+One-time GitHub setup for member requests: create the issue label `join-request`.
+The issue form applies it only when the label exists.
 
 To host below a subpath instead, set `NEXT_PUBLIC_BASE_PATH` (no trailing slash) at build time.
 
-## Approve a member
+## How members are added
 
 The join form opens the issue form in `.github/ISSUE_TEMPLATE/join.yml`.
 The issue form applies the `join-request` label for every author, including authors without triage access.
+The **Add member** workflow runs when a labelled issue is opened, edited, reopened, labelled, or gets a comment:
 
-1. Review the join issue.
-2. Visit the website and test its ring widget.
-3. Add the `approved` label to the open issue.
-4. **Prepare approved member** parses the issue form, validates the member, rejects duplicate IDs and websites, and opens a pull request that adds the member.
-5. Review and merge the pull request.
-6. Vercel deploys the new ring after the merge.
+1. It parses the issue form and validates the member, including duplicate IDs and websites.
+2. It loads the website and checks that the served HTML links to `firestoners.com`, through the badge links, the icon, or the widget script.
+3. It appends the member to `data/members.json` on `main` and closes the issue with the member's ring link.
+4. Vercel deploys the new ring after that push.
 
-Approval and merge stay with you.
-The member workflow has one concurrency group and branch per issue, and it reconciles a branch left behind by a partial run.
-To reopen a closed, unmerged member pull request, remove and reapply the `approved` label.
-If a request changes after its pull request was created, close it and submit a new request, or edit the member in the pull request.
-If two requests conflict after another merge, update the older pull request from `main` and rerun validation before merging.
-GitHub may not trigger pull-request checks for a pull request created by `GITHUB_TOKEN`; **Check ring** runs again on `main` after the merge.
+When a step fails, the workflow comments on the issue once with the reason and changes nothing.
+The next edit or comment on the issue runs the check again.
+The push only fast-forwards `main`; when another push wins a race, the workflow reads the new ring and retries.
+A rerun on a member who is already in the ring only closes the issue.
+To add a member by hand, add the `join-request` label to their issue, or edit `data/members.json` directly.
+To remove a member, delete their entry from `data/members.json`.
+Pushes by `GITHUB_TOKEN` do not start **Check ring**; the member data is validated before the push.
 A failed Vercel build does not replace the live site.
 
 ## Member data
@@ -67,8 +64,8 @@ Append members to keep existing neighbours stable where possible.
 | `year` | A four-digit class year |
 | `message` | Optional, up to 160 characters |
 
-No service fetches submitted URLs automatically.
-Review the site and its widget yourself before approval.
+The **Add member** workflow fetches each submitted website once per check, from a GitHub-hosted runner.
+Sites that render the badge only with client-side JavaScript fail the check; their owners can add the badge to the served HTML.
 
 ## Widget
 

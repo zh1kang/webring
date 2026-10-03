@@ -1,17 +1,22 @@
-name: Prepare approved member
+name: Add member
 on:
   issues:
-    types: [labeled]
+    types: [opened, edited, reopened, labeled]
+  issue_comment:
+    types: [created]
 permissions:
   contents: write
-  pull-requests: write
-  issues: read
+  issues: write
 concurrency:
   group: member-request-${{ github.event.issue.number }}
   cancel-in-progress: false
 jobs:
-  prepare:
-    if: github.event.label.name == 'approved' || github.event.label.name == 'join-request'
+  admit:
+    if: >-
+      github.event.issue.state == 'open' &&
+      !github.event.issue.pull_request &&
+      contains(github.event.issue.labels.*.name, 'join-request') &&
+      github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,5 +26,5 @@ jobs:
       - uses: actions/github-script@v7
         with:
           script: |
-            const { createMemberPullRequest } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/join-request.mjs`);
-            await createMemberPullRequest({github, context});
+            const { admitMember } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/join-request.mjs`);
+            core.info(`Join request #${context.payload.issue.number}: ${await admitMember({github, context})}`);

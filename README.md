@@ -19,9 +19,12 @@ You need a personal website on HTTPS and a GitHub account.
    GitHub opens the **Join the ring** issue form with your details filled in.
 6. Confirm that you added the widget, then submit the issue.
 
-A maintainer visits your site and checks the badge.
-When your request is approved, a pull request adds you to the ring.
-You appear on the graph after that pull request is merged.
+A bot checks your request right away.
+If the form is valid and your site links to firestoners.com, it adds you to the ring and closes the issue.
+You appear on the graph about a minute later.
+If something is missing, the bot comments on the issue and tells you what to fix.
+Fix it, then edit or comment on the issue, and the bot checks again.
+The badge must be in the HTML that your site serves.
 
 ### Without the join form
 
