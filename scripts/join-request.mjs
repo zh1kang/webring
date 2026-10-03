@@ -14,9 +14,12 @@ export function parseRequest(body) {
 }
 const REPLY_MARK = '<!-- firestoners-join -->';
 const PAGE_LIMIT = 5_000_000;
-/** True when the page links to the ring: the badge links, its icon, or the widget script on firestoners.com. */
+/**
+ * True when the page links to the ring: the badge links, its icon, or the widget script.
+ * firestoners.vercel.app serves the same ring, and badges copied there before badges were pinned to firestoners.com use it.
+ */
 export function linksToRing(html) {
-  return /(?:https?:)?\/\/(?:www\.)?firestoners\.com(?=[/#?"'\s>]|$)/i.test(html);
+  return /(?:https?:)?\/\/(?:www\.)?firestoners\.(?:com|vercel\.app)(?=[/#?"'\s>]|$)/i.test(html);
 }
 /** Load the HTML that the website serves, as the join check sees it. */
 export async function fetchSite(website) {

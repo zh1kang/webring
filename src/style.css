@@ -50,8 +50,10 @@ footer { display: flex; justify-content: space-between; padding: 18px 36px 20px;
 /* The box, with the edges behind the volume dashed. */
 .graph-frame { fill: none; stroke: #a0a0a0; stroke-width: .55; opacity: var(--frame-alpha,1); }
 .graph-frame.hidden-edges { stroke: #c2c2c2; stroke-dasharray: 4 4; }
-/* The ring links draw in from member to member. */
-.ring { fill: none; stroke: var(--ink); stroke-width: .75; stroke-linecap: round; opacity: calc(var(--ring-alpha,0) * .55); }
+/* The ring links always join each member to the next; the trace inks over them from member to member. */
+.ring, .ring-trace { fill: none; stroke: var(--ink); stroke-width: .75; stroke-linecap: round; }
+.ring { opacity: calc(var(--ring-alpha,0) * .3); }
+.ring-trace { opacity: calc(var(--trace-alpha,0) * .6); }
 /* The selected member's links to its previous and next members in the ring. */
 .ring-links { fill: none; stroke: var(--accent); stroke-width: 1.25; stroke-linecap: round; }
 .node { position: absolute; left: 0; top: 0; width: 28px; height: 28px; padding: 0; opacity: var(--node-alpha,1); pointer-events: auto; cursor: pointer; user-select: none; }

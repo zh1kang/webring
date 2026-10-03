@@ -14,7 +14,6 @@ You need a personal website on HTTPS and a GitHub account.
    Use lowercase letters, numbers, and dashes.
 3. Select a light or dark badge, then select **Copy**.
 4. Paste the HTML into the footer of your website and publish it.
-   Make the HTML on the published webring site, not on a local copy, so the links point to the live ring.
 5. Select **Send request**.
    GitHub opens the **Join the ring** issue form with your details filled in.
 6. Confirm that you added the widget, then submit the issue.

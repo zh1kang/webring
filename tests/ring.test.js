@@ -59,7 +59,8 @@ test('the badge check finds links to the ring, and only to the ring', () => {
   assert.ok(linksToRing(widget('https://firestoners.com/', 'https://a.site')));
   assert.ok(linksToRing('<a href="https://www.firestoners.com/#a?nav=next">→</a>'));
   assert.ok(linksToRing("<script src='//firestoners.com/widget.js'></script>"));
-  for (const html of ['<a href="https://notfirestoners.com/">', '<a href="https://firestoners.com.evil.site/">', 'firestoners.com in plain text', ''])
+  assert.ok(linksToRing('<a href="https://firestoners.vercel.app/#https%3A%2F%2Fa.site?nav=next">'));
+  for (const html of ['<a href="https://notfirestoners.com/">', '<a href="https://firestoners.com.evil.site/">', '<a href="https://firestoners.vercel.app.evil.site/">', '<a href="https://my-firestoners.vercel.app/">', 'firestoners.com in plain text', ''])
     assert.equal(linksToRing(html), false, html);
 });
 

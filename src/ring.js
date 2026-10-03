@@ -50,6 +50,8 @@ export function resolveNavigation(members, hash) {
   if (!direction) return {selected: index};
   return {destination: members[(index + (direction === 'next' ? 1 : -1) + members.length) % members.length].website};
 }
+/** The published ring. Copied badges always point here, whichever address the join dialog was opened on. */
+export const RING_URL = 'https://firestoners.com';
 export function slugify(name) {
   return name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+/, '').slice(0, 40).replace(/-+$/, '');
 }

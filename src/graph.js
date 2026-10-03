@@ -1,8 +1,9 @@
 /**
  * Paradigm's Erdős sequence, drawn only with the members of the ring.
- * One stage value from 0 to 1 drives the whole scene: the first site alone, the other members growing out of it,
- * the lift of the ring into 3D inside a box, a turn and a side view of its layers, the flat top view, and the ring
- * links drawing from member to member. Autoplay holds twice, then collapses and loops.
+ * One stage value from 0 to 1 drives the whole scene: the members drawing out one after another along the ring, the
+ * lift of the ring into 3D inside a box, a turn and a side view of its layers, the flat top view, and a trace that
+ * inks the ring from member to member. Autoplay holds twice, then collapses and loops.
+ * Every member that shows is linked to the member before it, so the ring is always connected.
  */
 
 const RING_RADIUS = 1;
@@ -13,17 +14,15 @@ export const BOUNDS = Object.freeze(Array.from({ length: 7 }, (_, index) => inde
 const LIFT_START = 0.204;
 const CENTRE_START = (BOUNDS[4] + BOUNDS[5]) / 2;
 const NEIGHBOUR_PAUSE = 0.135;
-const EMERGE_START = 0.02;
 const EMERGE_END = 0.13;
-const DRAW_END = BOUNDS[5] + (BOUNDS[6] - BOUNDS[5]) * 0.7;
+const TRACE_END = BOUNDS[5] + (BOUNDS[6] - BOUNDS[5]) * 0.7;
 
 export const STAGES = Object.freeze([
-  { label: "First site", at: 0, jump: 0 },
-  { label: "Members", at: 0.084, jump: BOUNDS[1] },
+  { label: "Members", at: 0, jump: BOUNDS[1] },
   { label: "Lift", at: LIFT_START, jump: 0.3 },
   { label: "Orbit", at: BOUNDS[2], jump: 0.5 },
   { label: "Flatten", at: BOUNDS[4], jump: 0.75 },
-  { label: "Link", at: BOUNDS[5] + 0.01, jump: 1 },
+  { label: "Ring", at: BOUNDS[5] + 0.01, jump: 1 },
 ]);
 
 const ZOOM = 0.58;
@@ -33,8 +32,6 @@ const ZOOM_OUTRO = 0.12;
 const POINT_SIZE = 3;
 const POINT_SIZE_START = 2;
 const SPREAD_START = 0.25;
-const EMERGE_SPAN = 1.5;
-const EMERGE_SWIRL = 0.35;
 const DEG = Math.PI / 180;
 const POLAR = [45 * DEG, 55 * DEG, 55 * DEG, 90 * DEG];
 const AZIMUTH = [0, 45 * DEG, 90 * DEG, 90 * DEG];
@@ -64,6 +61,13 @@ const approach = (value, target, tau, seconds) => (tau <= 1e-5 ? target : value 
 const ramp = (value, from, to, ease = smooth) => (to <= from ? (value >= to ? 1 : 0) : ease((value - from) / (to - from)));
 const angleBetween = (from, to) => Math.atan2(Math.sin(from - to), Math.cos(from - to));
 
+/** A point on the ring at a fractional ring position, so a member can travel along the arc from one slot to the next. */
+function ringPoint(count, position) {
+  if (count === 1) return { x: 0, y: 0 };
+  const angle = Math.PI - (2 * Math.PI * position) / count;
+  return { x: Math.cos(angle) * RING_RADIUS, y: Math.sin(angle) * RING_RADIUS };
+}
+
 const layouts = new Map();
 /**
  * Members sit on a ring in ring order, clockwise from the top of the final view; a single member sits at the centre.
@@ -77,11 +81,7 @@ export function ringLayout(count) {
   const raw = Array.from({ length: count }, (_, index) => (index * GOLDEN) % 1);
   const mean = raw.reduce((sum, value) => sum + value, 0) / Math.max(1, count);
   const spread = Math.max(0, ...raw.map((value) => Math.abs(value - mean)));
-  const slots = raw.map((value, index) => {
-    const angle = Math.PI - (2 * Math.PI * index) / count;
-    const lift = spread > 0 ? ((value - mean) * MAX_LIFT) / spread : 0;
-    return count === 1 ? { x: 0, y: 0, lift } : { x: Math.cos(angle) * RING_RADIUS, y: Math.sin(angle) * RING_RADIUS, lift };
-  });
+  const slots = raw.map((value, index) => ({ ...ringPoint(count, index), lift: spread > 0 ? ((value - mean) * MAX_LIFT) / spread : 0 }));
   const edges = count < 2 ? [] : count === 2 ? [[0, 1]] : slots.map((_, index) => [index, (index + 1) % count]);
   const layout = Object.freeze({ slots, edges, radius: RING_RADIUS, maxLift: MAX_LIFT });
   layouts.set(count, layout);
@@ -121,7 +121,7 @@ export function stageView(stage) {
     azimuth,
     frameOpacity,
     edgeOpacity: ramp(stage, BOUNDS[5], BOUNDS[5] + 0.01),
-    edgeFront: ramp(stage, BOUNDS[5], DRAW_END),
+    edgeFront: ramp(stage, BOUNDS[5], TRACE_END),
   };
 }
 
@@ -188,6 +188,7 @@ function autoplay(state, seconds) {
     }
     case "fadeIn":
       state.loopTime += seconds;
+      state.target += (seconds * speedAt(state.target)) / 16;
       state.fade = 0.06 + (1 - 0.06) * clamp(state.loopTime / 0.45);
       if (state.loopTime >= 0.45 + 0.7) Object.assign(state, { fade: 1, loop: "fwd" });
       break;
@@ -271,30 +272,29 @@ export function cameraFor(state) {
 
 /**
  * Everything needed to draw one frame for `count` members: world positions, per-member alpha, the point size in
- * pixels, the box extent, and the ring strokes drawn so far.
- * The first member starts alone at the centre; the others grow out of it in ring order and the ring opens to full size.
+ * pixels, the box extent, the ring links, and the trace drawn over them so far.
+ * The ring draws out like a pen: each member slides out of the one before it along the arc, pulling its link behind it,
+ * then the last link closes the ring. Each link reaches its member, so a member never shows unconnected.
  */
 export function sceneFor(state, count) {
   const { slots, edges, radius, maxLift } = ringLayout(count);
   const view = stageView(state.stage);
-  const emerge = expo((state.stage - EMERGE_START) / (EMERGE_END - EMERGE_START));
   const spread = lerp(SPREAD_START, 1, quint((state.stage - BOUNDS[1]) / (BOUNDS[2] - BOUNDS[1])));
-  const progress = emerge * Math.max(0, count - 2 + EMERGE_SPAN);
+  const pen = smooth(state.stage / EMERGE_END) * Math.max(0, edges.length);
+  const travel = (index) => (index === 0 ? 1 : clamp(pen - (index - 1)));
   const lift = Math.max(0, view.lift);
   const positions = new Array(count);
   const alphas = new Float32Array(count);
   for (let index = 0; index < count; index++) {
-    const slot = slots[index];
-    const shown = index === 0 ? 1 : clamp((progress - (index - 1)) / EMERGE_SPAN);
-    const travel = (index === 0 ? emerge : shown) * spread;
-    const swirl = EMERGE_SWIRL * (1 - (index === 0 ? emerge : shown));
-    const cos = Math.cos(swirl),
-      sin = Math.sin(swirl);
-    positions[index] = { x: (slot.x * cos - slot.y * sin) * travel, y: (slot.x * sin + slot.y * cos) * travel, z: slot.lift * lift };
-    alphas[index] = shown * state.fade;
+    const moved = travel(index);
+    const point = moved >= 1 ? slots[index] : ringPoint(count, index - 1 + moved);
+    const height = moved >= 1 ? slots[index].lift : lerp(slots[index - 1].lift, slots[index].lift, moved);
+    positions[index] = { x: point.x * spread, y: point.y * spread, z: height * lift };
+    alphas[index] = (index === 0 ? 1 : clamp(moved * 4)) * state.fade;
   }
+  const links = edges.map(([from, to]) => ({ from, to, amount: to === 0 ? clamp(pen - (count - 1)) : travel(to) > 0 ? 1 : 0 })).filter((link) => link.amount > 0);
   const front = (state.outro ? state.collapse * state.collapse : view.edgeFront) * edges.length;
-  const strokes = edges.slice(0, Math.ceil(front - 1e-9)).map(([from, to], index) => ({ from, to, amount: clamp(front - index) }));
+  const trace = edges.slice(0, Math.ceil(front - 1e-9)).map(([from, to], index) => ({ from, to, amount: clamp(front - index) }));
   const growth = smooth((state.stage - 0.245) / (BOUNDS[2] - 0.245));
   let size = lerp(POINT_SIZE_START, POINT_SIZE, growth);
   if (state.outro) size = lerp(POINT_SIZE_START, size, state.collapse);
@@ -302,9 +302,11 @@ export function sceneFor(state, count) {
   return {
     positions,
     alphas,
-    strokes,
+    links,
+    trace,
     pointSize: size * (state.zoom / ZOOM),
-    edgeOpacity: view.edgeOpacity * state.fade,
+    linkOpacity: state.fade,
+    traceOpacity: view.edgeOpacity * state.fade,
     frameOpacity: view.frameOpacity * state.fade,
     extent: { radius: radius * 1.12, height: maxLift * lift * 1.12 },
     camera,

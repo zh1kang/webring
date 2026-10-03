@@ -62,6 +62,7 @@ export default function Network({ people = EMPTY, selectedIndex, selectedId, onS
     frameRef = useRef(null),
     hiddenFrameRef = useRef(null),
     ringRef = useRef(null),
+    traceRef = useRef(null),
     linksRef = useRef(null),
     leaderRef = useRef(null),
     calloutRef = useRef(null),
@@ -138,15 +139,18 @@ export default function Network({ people = EMPTY, selectedIndex, selectedId, onS
     positionsRef.current = positions;
     alphasRef.current = scene.alphas;
 
-    const ring = scene.strokes
-      .map(({ from, to, amount }) => {
-        const start = positions[from],
-          end = positions[to];
-        return `M${start.x},${start.y}L${start.x + (end.x - start.x) * amount},${start.y + (end.y - start.y) * amount}`;
-      })
-      .join("");
-    ringRef.current?.setAttribute("d", ring);
-    graph.style.setProperty("--ring-alpha", String(scene.edgeOpacity));
+    const strokePath = (strokes) =>
+      strokes
+        .map(({ from, to, amount }) => {
+          const start = positions[from],
+            end = positions[to];
+          return `M${start.x},${start.y}L${start.x + (end.x - start.x) * amount},${start.y + (end.y - start.y) * amount}`;
+        })
+        .join("");
+    ringRef.current?.setAttribute("d", strokePath(scene.links));
+    traceRef.current?.setAttribute("d", strokePath(scene.trace));
+    graph.style.setProperty("--ring-alpha", String(scene.linkOpacity));
+    graph.style.setProperty("--trace-alpha", String(scene.traceOpacity));
 
     const frame = frameFor(scene, viewport);
     const segment = ({ from, to }) => `M${from.x},${from.y}L${to.x},${to.y}`;
@@ -358,6 +362,7 @@ export default function Network({ people = EMPTY, selectedIndex, selectedId, onS
           <path ref={hiddenFrameRef} className="graph-frame hidden-edges" />
           <path ref={frameRef} className="graph-frame" />
           <path ref={ringRef} className="ring" />
+          <path ref={traceRef} className="ring-trace" />
           <path ref={linksRef} className="ring-links" />
           <path ref={leaderRef} key={detail?.id ?? "none"} className="callout-leader" />
         </svg>

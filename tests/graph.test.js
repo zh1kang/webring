@@ -54,47 +54,73 @@ test('the camera follows the Erdős choreography: top, lift, side, cut-and-proje
 });
 
 test('the stage labels follow the stage', () => {
-  assert.equal(STAGES.length, 6);
-  assert.deepEqual(STAGES.map(stage => stage.label), ['First site', 'Members', 'Lift', 'Orbit', 'Flatten', 'Link']);
-  assert.equal(STAGES[stageIndex(0)].label, 'First site');
+  assert.deepEqual(STAGES.map(stage => stage.label), ['Members', 'Lift', 'Orbit', 'Flatten', 'Ring']);
+  assert.equal(STAGES[stageIndex(0)].label, 'Members');
   assert.equal(STAGES[stageIndex(BOUNDS[1])].label, 'Members');
   assert.equal(STAGES[stageIndex(0.3)].label, 'Lift');
-  assert.equal(STAGES[stageIndex(1)].label, 'Link');
+  assert.equal(STAGES[stageIndex(1)].label, 'Ring');
 });
 
-test('the first member starts alone at the centre; the others grow out of it to their places on the ring', () => {
+test('the ring draws out like a pen: each member slides out of the one before it, then the ring closes', () => {
   const count = 8;
   const at = stage => sceneFor({...createPlayback(stage), stage}, count);
+  const {slots} = ringLayout(count);
   const start = at(0);
   assert.equal(start.alphas[0], 1);
   assert.ok(start.alphas.slice(1).every(alpha => alpha === 0));
-  assert.ok(near(start.positions[0].x, 0) && near(start.positions[0].y, 0));
-  assert.ok(at(BOUNDS[1]).alphas.every(alpha => near(alpha, 1)));
-  const {slots} = ringLayout(count);
+  assert.deepEqual(start.links, []);
+  const formed = at(BOUNDS[1]);
+  assert.ok(formed.alphas.every(alpha => near(alpha, 1)));
+  assert.equal(formed.links.length, count);
+  assert.ok(formed.links.every(link => link.amount === 1));
+  for (let step = 1; step < 40; step++) {
+    const scene = at((step / 40) * 0.13);
+    scene.positions.forEach((position, index) => {
+      if (index === 0 || scene.alphas[index] === 0) return;
+      const radius = Math.hypot(position.x, position.y), previous = Math.hypot(scene.positions[index - 1].x, scene.positions[index - 1].y);
+      assert.ok(near(radius, previous, 1e-9), 'members travel along the ring');
+    });
+  }
   at(BOUNDS[2]).positions.forEach((position, index) => {
     assert.ok(near(position.x, slots[index].x, 1e-6) && near(position.y, slots[index].y, 1e-6));
     assert.ok(near(position.z, slots[index].lift, 1e-6));
   });
 });
 
-test('the ring links draw from member to member in ring order, then close the ring', () => {
+test('every member that shows is always linked to the member before it, through whole loops', () => {
+  for (const count of [2, 3, 12, 40]) {
+    let state = createPlayback();
+    for (let frame = 0; frame < 60 * 70; frame++) {
+      state = advancePlayback(state, 1 / 60);
+      const scene = sceneFor(state, count);
+      for (let index = 1; index < count; index++) {
+        if (scene.alphas[index] === 0) continue;
+        assert.ok(scene.links.some(link => link.from === index - 1 && link.to === index && link.amount === 1), `${count} members, member ${index}, stage ${state.stage.toFixed(3)}`);
+      }
+      if (state.stage >= 0.13) assert.ok(scene.links.length === ringLayout(count).edges.length && scene.links.every(link => link.amount === 1), 'the whole ring stays linked once it is drawn');
+    }
+  }
+});
+
+test('the trace inks the ring from member to member in ring order, over the links', () => {
   const at = stage => sceneFor({...createPlayback(stage), stage}, 5);
-  assert.deepEqual(at(BOUNDS[5]).strokes, []);
+  assert.deepEqual(at(BOUNDS[5]).trace, []);
   let drawn = 0;
   for (let step = 0; step <= 100; step++) {
-    const {strokes} = at(BOUNDS[5] + (step / 100) * (1 - BOUNDS[5]));
-    assert.ok(strokes.length >= drawn, 'the drawing only moves forward');
-    drawn = strokes.length;
-    strokes.forEach((stroke, index) => {
+    const {trace} = at(BOUNDS[5] + (step / 100) * (1 - BOUNDS[5]));
+    assert.ok(trace.length >= drawn, 'the trace only moves forward');
+    drawn = trace.length;
+    trace.forEach((stroke, index) => {
       assert.deepEqual([stroke.from, stroke.to], [index, (index + 1) % 5]);
-      if (index < strokes.length - 1) assert.equal(stroke.amount, 1, 'only the front stroke is partial');
+      if (index < trace.length - 1) assert.equal(stroke.amount, 1, 'only the front stroke is partial');
     });
   }
-  const done = at(1).strokes;
+  const done = at(1).trace;
   assert.equal(done.length, 5);
   assert.ok(done.every(stroke => stroke.amount === 1));
-  assert.equal(at(1).edgeOpacity, 1);
-  assert.deepEqual(sceneFor(createPlayback(1), 1).strokes, []);
+  assert.equal(at(1).traceOpacity, 1);
+  assert.deepEqual(sceneFor(createPlayback(1), 1).trace, []);
+  assert.deepEqual(sceneFor(createPlayback(1), 1).links, []);
 });
 
 test('autoplay holds on the neighbours and the centre, then collapses and loops', () => {

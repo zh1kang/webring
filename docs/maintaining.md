@@ -79,7 +79,8 @@ Unknown members produce an inline message and never redirect.
 ## Interaction
 
 The graph follows the camera choreography of the Paradigm Erdős sequence, but it draws only the members of the ring.
-One stage value drives six stages: the first site alone, the other members growing out of it, the lift of the ring into a box, an orbit and a side view of its layers, the flat top view, and the ring links drawing from member to member.
+One stage value drives five stages: the members drawing out along the ring, the lift of the ring into a box, an orbit and a side view of its layers, the flat top view, and a trace that inks the ring from member to member.
+The ring draws like a pen: each member slides out of the one before it with its link, so every member that shows is connected.
 Autoplay holds on the members and on the top view, then collapses and loops.
 Members sit on a ring in ring order, clockwise from the top, and each member lifts to its own layer.
 Select a stage label to jump to that stage and pause; select anywhere else to resume.

@@ -1,7 +1,7 @@
 'use client';
 
 import {useEffect, useRef, useState} from 'react';
-import {LIMITS, canonicalWebsite, joinRequestUrl, slugify, validateMembers, widget} from '../ring.js';
+import {LIMITS, RING_URL, canonicalWebsite, joinRequestUrl, slugify, validateMembers, widget} from '../ring.js';
 
 const ID_PATTERN = '[a-z0-9][a-z0-9-]{0,39}';
 const REPOSITORY = 'zh1kang/webring';
@@ -14,10 +14,9 @@ export default function JoinDialog({open, onClose, members, basePath}) {
   const [website, setWebsite] = useState('');
   const [message, setMessage] = useState('');
   const [dark, setDark] = useState(false);
-  const [origin, setOrigin] = useState('');
   const [status, setStatus] = useState('');
   const [copied, setCopied] = useState(false);
-  useEffect(() => {setOrigin(location.origin); return () => clearTimeout(copyTimer.current);}, []);
+  useEffect(() => () => clearTimeout(copyTimer.current), []);
   useEffect(() => {
     if (open && !dialog.current.open) dialog.current.showModal();
     if (!open && dialog.current.open) dialog.current.close();
@@ -26,7 +25,7 @@ export default function JoinDialog({open, onClose, members, basePath}) {
   let snippet = '';
   let websiteError = '';
   if (website) {
-    try {snippet = widget(origin + basePath, website, {dark});}
+    try {snippet = widget(RING_URL + basePath, website, {dark});}
     catch (error) {websiteError = error.message;}
   }
   const icon = `${basePath}/${dark ? 'icon.white.svg' : 'icon.svg'}`;
