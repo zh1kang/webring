@@ -1,0 +1,58 @@
+name: Join the ring
+description: Add your personal website to the Princeton webring.
+title: "Join: "
+labels: [join-request]
+body:
+  - type: markdown
+    attributes:
+      value: Add the ring widget to your website first. A maintainer reviews your site, then adds the `approved` label, which opens the pull request.
+  - type: input
+    id: name
+    attributes:
+      label: Name
+      placeholder: Alex Chen
+    validations:
+      required: true
+  - type: input
+    id: member-id
+    attributes:
+      label: Member ID
+      description: Your ring link. Lowercase letters, numbers, and dashes.
+      placeholder: alex-chen
+    validations:
+      required: true
+  - type: input
+    id: website
+    attributes:
+      label: Website
+      placeholder: https://your.site
+    validations:
+      required: true
+  - type: input
+    id: major
+    attributes:
+      label: Major
+      placeholder: Computer Science
+    validations:
+      required: true
+  - type: input
+    id: class-year
+    attributes:
+      label: Class year
+      placeholder: "2027"
+    validations:
+      required: true
+  - type: textarea
+    id: message
+    attributes:
+      label: Message
+      description: Optional. Up to 160 characters, shown with your node.
+    validations:
+      required: false
+  - type: checkboxes
+    id: widget
+    attributes:
+      label: Widget
+      options:
+        - label: I have added the ring widget to my website.
+          required: true

@@ -1,0 +1,33 @@
+{
+  "name": "webring",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test",
+    "dev": "next dev --hostname 127.0.0.1",
+    "build": "next build",
+    "preview": "serve out --listen tcp://127.0.0.1:4173",
+    "validate": "node scripts/validate.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zh1kang/webring.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/zh1kang/webring/issues"
+  },
+  "homepage": "https://github.com/zh1kang/webring#readme",
+  "dependencies": {
+    "next": "^16.3.8",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "serve": "^14.2.6"
+  }
+}

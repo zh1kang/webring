@@ -1,0 +1,25 @@
+name: Prepare approved member
+on:
+  issues:
+    types: [labeled]
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+concurrency:
+  group: member-request-${{ github.event.issue.number }}
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.event.label.name == 'approved' || github.event.label.name == 'join-request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const { createMemberPullRequest } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/join-request.mjs`);
+            await createMemberPullRequest({github, context});
