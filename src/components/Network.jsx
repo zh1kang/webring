@@ -150,8 +150,7 @@ export default function Network({ people = EMPTY, selectedIndex, selectedId, onS
 
     const frame = frameFor(scene, viewport);
     const segment = ({ from, to }) => `M${from.x},${from.y}L${to.x},${to.y}`;
-    const ticks = frame.corners.map((point) => `M${point.x - 3},${point.y}h6M${point.x},${point.y - 3}v6`).join("");
-    frameRef.current?.setAttribute("d", frame.edges.filter((edge) => !edge.hidden).map(segment).join("") + ticks);
+    frameRef.current?.setAttribute("d", frame.edges.filter((edge) => !edge.hidden).map(segment).join(""));
     hiddenFrameRef.current?.setAttribute("d", frame.edges.filter((edge) => edge.hidden).map(segment).join(""));
     graph.style.setProperty("--frame-alpha", String(scene.frameOpacity));
 
